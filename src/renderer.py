@@ -2,15 +2,15 @@ import graphviz
 from typing import Dict, Any
 
 def format_size(size_bytes: int) -> str:
-    """Formats size in bytes to KB, MB, or GB."""
+    """Formats size in bytes to KB, MB, or GB with increased precision."""
     if size_bytes < 1024:
         return f"{size_bytes} B"
     elif size_bytes < 1024**2:
         return f"{size_bytes/1024:.2f} KB"
     elif size_bytes < 1024**3:
-        return f"{size_bytes/1024**2:.2f} MB"
+        return f"{size_bytes/1024**2:.4f} MB"
     else:
-        return f"{size_bytes/1024**3:.2f} GB"
+        return f"{size_bytes/1024**3:.4f} GB"
 
 class GraphRenderer:
     """Renders the GGUF analysis data into a visual graph."""
@@ -74,32 +74,50 @@ class GraphRenderer:
         num_layers = len(remaining_layers)
         total_size = sum(layer['size'] for layer in remaining_layers)
 
-        # --- Shape Information ---
-        first_sig = remaining_layers[0].get('shape_signature')
-        all_same_shape = all(layer.get('shape_signature') == first_sig for layer in remaining_layers)
+        from collections import Counter
 
-        shape_label = ""
-        if all_same_shape and first_sig:
-            # Create a summary of the unique shapes and their counts
-            from collections import Counter
-            shape_counts = Counter(first_sig)
+        # --- Structure Signature Analysis ---
+        first_sig = remaining_layers[0].get('structure_signature')
+        all_same_structure = all(layer.get('structure_signature') == first_sig for layer in remaining_layers)
+
+        details_label = ""
+        if all_same_structure and first_sig:
+            # All layers are the same, show a consolidated summary
+            shapes = [s[0] for s in first_sig] # Extract shapes from structure signature
+            shape_counts = Counter(shapes)
             shape_summary = [f"{count}x {' x '.join(map(str, shape))}" for shape, count in sorted(shape_counts.items())]
-            shape_label = (
+
+            size_summary = [f"Layer {layer['index']}: {format_size(layer['size'])}" for layer in remaining_layers]
+
+            details_label = (
                 f"--- Common Tensor Shapes ---\\n"
                 f"{'\\n'.join(shape_summary)}\\n"
+                f"--- Individual Layer Sizes ---\\n"
+                f"{'\\n'.join(size_summary)}\\n"
             )
         else:
-            shape_label = "--- (Tensor shapes vary between layers) ---\\n"
+            # Layers differ, show details for each
+            layer_details = []
+            for layer in remaining_layers:
+                size_info = f"Layer {layer['index']}: {format_size(layer['size'])}"
 
-        # --- Size Information ---
-        details = [f"Layer {layer['index']}: {format_size(layer['size'])}" for layer in remaining_layers]
-        details_label = "\\n".join(details)
+                sig = layer.get('structure_signature')
+                if sig:
+                    shapes = [s[0] for s in sig]
+                    shape_counts = Counter(shapes)
+                    shape_summary = ", ".join(f"{c}x[{'x'.join(map(str, s))}]" for s, c in sorted(shape_counts.items()))
+                    layer_details.append(f"{size_info} (Shapes: {shape_summary})")
+                else:
+                    layer_details.append(size_info)
+
+            details_label = (
+                f"--- Layer Details (Structures Vary) ---\\n"
+                f"{'\\n'.join(layer_details)}\\n"
+            )
 
         label = (
             f"Stack of {num_layers} Layers\\n"
-            f"{shape_label}"
-            f"--- Individual Layer Sizes ---\\n"
-            f"{details_label}\\n"
+            f"{details_label}"
             f"------------------------------\\n"
             f"Total Stack Size: {format_size(total_size)}"
         )
@@ -125,34 +143,37 @@ class GraphRenderer:
             for tensor in self.data['globals_post']:
                 self._add_tensor_node(tensor, c)
 
-        # --- Connect the main components with cleaner edges ---
-        if self.data['globals_pre'] and self.data['layers']:
-            self.dot.edge(
-                'cluster_globals_pre',
-                f"cluster_layer_{self.data['layers'][0]['index']}",
-                ltail='cluster_globals_pre',
-                lhead=f"cluster_layer_{self.data['layers'][0]['index']}"
-            )
+        # --- Connect the main components ---
+        layer_0_cluster_name = f"cluster_layer_{self.data['layers'][0]['index']}"
 
-        layer_0_id = f"cluster_layer_{self.data['layers'][0]['index']}"
+        if self.data['globals_pre'] and self.data['layers']:
+            # Connect from the last pre-global tensor to the first tensor in Layer 0
+            self.dot.edge(
+                self.data['globals_pre'][-1]['name'],
+                self.data['layers'][0]['tensors'][0]['name'],
+                lhead=layer_0_cluster_name
+            )
 
         if len(self.data['layers']) > 1:
+            # Connect from the last tensor in Layer 0 to the stack summary
             self.dot.edge(
-                layer_0_id,
+                self.data['layers'][0]['tensors'][-1]['name'],
                 'layer_stack_summary',
-                ltail=layer_0_id
+                ltail=layer_0_cluster_name
             )
             if self.data['globals_post']:
+                # Connect from the stack summary to the first post-global tensor
                 self.dot.edge(
                     'layer_stack_summary',
-                    'cluster_globals_post',
+                    self.data['globals_post'][0]['name'],
                     lhead='cluster_globals_post'
                 )
         elif self.data['layers'] and self.data['globals_post']:
+            # If there's no stack, connect Layer 0 directly to the post-globals
             self.dot.edge(
-                layer_0_id,
-                'cluster_globals_post',
-                ltail=layer_0_id,
+                self.data['layers'][0]['tensors'][-1]['name'],
+                self.data['globals_post'][0]['name'],
+                ltail=layer_0_cluster_name,
                 lhead='cluster_globals_post'
             )
 

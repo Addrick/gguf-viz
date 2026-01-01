@@ -60,6 +60,7 @@ class GGUFAnalyzer:
             tensor_info = {
                 'name': tensor_name,
                 'shape': shape,
+                'tensor_type': tensor.tensor_type,  # Added for structure signature
                 'size_bytes': size_bytes,
                 'n_elements': n_elements,
             }
@@ -78,10 +79,11 @@ class GGUFAnalyzer:
             else:
                 misc.append(tensor_info)
 
-        # Add shape signatures to each layer before sorting
+        # Add structure signatures to each layer before sorting
         for data in layers.values():
-            shapes = [tuple(t['shape']) for t in data['tensors']]
-            data['shape_signature'] = tuple(sorted(shapes))
+            # Signature now includes shape and tensor type for accurate comparison
+            structures = [(tuple(t['shape']), t['tensor_type']) for t in data['tensors']]
+            data['structure_signature'] = tuple(sorted(structures))
 
         # Convert defaultdict to a sorted list for predictable order
         sorted_layers = [
