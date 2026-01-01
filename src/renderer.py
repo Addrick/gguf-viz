@@ -62,7 +62,7 @@ class GraphRenderer:
                 self._add_tensor_node(tensor, c)
 
     def _render_layer_stack_summary(self):
-        """Renders a summary node for the stack of remaining layers."""
+        """Renders a summary node for the stack of remaining layers with detailed sizes."""
         if len(self.data['layers']) <= 1:
             return
 
@@ -70,12 +70,18 @@ class GraphRenderer:
         num_layers = len(remaining_layers)
         total_size = sum(layer['size'] for layer in remaining_layers)
 
+        # Create a detailed list of each layer's size
+        details = [f"Layer {layer['index']}: {format_size(layer['size'])}" for layer in remaining_layers]
+        details_label = "\\n".join(details)
+
         label = (
             f"Stack of {num_layers} Layers\\n"
-            f"(Layers 1 to {num_layers})\\n"
+            f"--- Individual Layer Sizes ---\\n"
+            f"{details_label}\\n"
+            f"------------------------------\\n"
             f"Total Stack Size: {format_size(total_size)}"
         )
-        self.dot.node('layer_stack_summary', label=label, shape='box3d', fillcolor='moccasin')
+        self.dot.node('layer_stack_summary', label=label, shape='box3d', fillcolor='moccasin', fontsize='10')
 
     def render(self, output_path: str):
         """Generates and saves the final architectural diagram."""
