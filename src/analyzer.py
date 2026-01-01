@@ -78,6 +78,11 @@ class GGUFAnalyzer:
             else:
                 misc.append(tensor_info)
 
+        # Add shape signatures to each layer before sorting
+        for data in layers.values():
+            shapes = [tuple(t['shape']) for t in data['tensors']]
+            data['shape_signature'] = tuple(sorted(shapes))
+
         # Convert defaultdict to a sorted list for predictable order
         sorted_layers = [
             {'index': index, **data} for index, data in sorted(layers.items())

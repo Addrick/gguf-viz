@@ -58,11 +58,15 @@ class GraphRenderer:
                     for tensor in ffn_tensors:
                         self._add_tensor_node(tensor, ffn_sg)
 
+            # Add an invisible edge to enforce vertical alignment
+            if attn_tensors and ffn_tensors:
+                c.edge(attn_tensors[-1]['name'], ffn_tensors[0]['name'], style='invis')
+
             for tensor in other_tensors:
                 self._add_tensor_node(tensor, c)
 
     def _render_layer_stack_summary(self):
-        """Renders a summary node for the stack of remaining layers with detailed sizes."""
+        """Renders a summary node for the stack of remaining layers with detailed sizes and shapes."""
         if len(self.data['layers']) <= 1:
             return
 
@@ -70,12 +74,30 @@ class GraphRenderer:
         num_layers = len(remaining_layers)
         total_size = sum(layer['size'] for layer in remaining_layers)
 
-        # Create a detailed list of each layer's size
+        # --- Shape Information ---
+        first_sig = remaining_layers[0].get('shape_signature')
+        all_same_shape = all(layer.get('shape_signature') == first_sig for layer in remaining_layers)
+
+        shape_label = ""
+        if all_same_shape and first_sig:
+            # Create a summary of the unique shapes and their counts
+            from collections import Counter
+            shape_counts = Counter(first_sig)
+            shape_summary = [f"{count}x {' x '.join(map(str, shape))}" for shape, count in sorted(shape_counts.items())]
+            shape_label = (
+                f"--- Common Tensor Shapes ---\\n"
+                f"{'\\n'.join(shape_summary)}\\n"
+            )
+        else:
+            shape_label = "--- (Tensor shapes vary between layers) ---\\n"
+
+        # --- Size Information ---
         details = [f"Layer {layer['index']}: {format_size(layer['size'])}" for layer in remaining_layers]
         details_label = "\\n".join(details)
 
         label = (
             f"Stack of {num_layers} Layers\\n"
+            f"{shape_label}"
             f"--- Individual Layer Sizes ---\\n"
             f"{details_label}\\n"
             f"------------------------------\\n"
@@ -103,19 +125,36 @@ class GraphRenderer:
             for tensor in self.data['globals_post']:
                 self._add_tensor_node(tensor, c)
 
-        # Connect the main components
+        # --- Connect the main components with cleaner edges ---
         if self.data['globals_pre'] and self.data['layers']:
-            self.dot.edge(self.data['globals_pre'][0]['name'], self.data['layers'][0]['tensors'][0]['name'], lhead=f"cluster_layer_{self.data['layers'][0]['index']}")
+            self.dot.edge(
+                'cluster_globals_pre',
+                f"cluster_layer_{self.data['layers'][0]['index']}",
+                ltail='cluster_globals_pre',
+                lhead=f"cluster_layer_{self.data['layers'][0]['index']}"
+            )
+
+        layer_0_id = f"cluster_layer_{self.data['layers'][0]['index']}"
 
         if len(self.data['layers']) > 1:
-            last_tensor_l0 = self.data['layers'][0]['tensors'][-1]['name']
-            self.dot.edge(last_tensor_l0, 'layer_stack_summary')
-
+            self.dot.edge(
+                layer_0_id,
+                'layer_stack_summary',
+                ltail=layer_0_id
+            )
             if self.data['globals_post']:
-                self.dot.edge('layer_stack_summary', self.data['globals_post'][0]['name'])
+                self.dot.edge(
+                    'layer_stack_summary',
+                    'cluster_globals_post',
+                    lhead='cluster_globals_post'
+                )
         elif self.data['layers'] and self.data['globals_post']:
-            last_tensor_l0 = self.data['layers'][0]['tensors'][-1]['name']
-            self.dot.edge(last_tensor_l0, self.data['globals_post'][0]['name'])
+            self.dot.edge(
+                layer_0_id,
+                'cluster_globals_post',
+                ltail=layer_0_id,
+                lhead='cluster_globals_post'
+            )
 
         try:
             self.dot.render(output_path, format='png', view=False, cleanup=True)
