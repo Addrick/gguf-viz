@@ -25,9 +25,13 @@ def run_cli(args):
         print("--------------------------\n")
 
         # 3. Render the diagram
-        print(f"Rendering diagram to {args.output_file}.png...")
         renderer = GraphRenderer(analysis_data)
-        renderer.render(args.output_file)
+        if args.save_to:
+            print(f"Saving diagram to {args.save_to}...")
+            renderer.render(save_path=args.save_to)
+        else:
+            # If no save path is provided, render() will display the image
+            renderer.render()
 
     except FileNotFoundError:
         print(f"Error: Input file not found at '{args.input_file}'")
@@ -47,11 +51,10 @@ def main():
         help="Path to the GGUF model file (required for CLI mode)."
     )
     parser.add_argument(
-        "-o",
-        "--output_file",
+        "--save-to",
         type=str,
-        default="model_diagram",
-        help="Path to the output PNG file (without extension). Default: model_diagram"
+        default=None,
+        help="Path to save the output PNG file. If not provided, the diagram is displayed instead."
     )
     parser.add_argument(
         "--gui",

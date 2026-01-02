@@ -1,5 +1,5 @@
 import graphviz
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 def format_size(size_bytes: int) -> str:
     """Formats size in bytes to KB, MB, or GB with increased precision."""
@@ -111,8 +111,8 @@ class GraphRenderer:
         )
         self.dot.node('layer_stack_summary', label=label, shape='box3d', fillcolor='moccasin', fontsize='10')
 
-    def render(self, output_path: str):
-        """Generates and saves the final architectural diagram."""
+    def _build_graph(self):
+        """Constructs the graphviz graph object from the analysis data."""
         # Pre-computation Globals
         with self.dot.subgraph(name="cluster_globals_pre") as c:
             c.attr(label="Input Tensors", style='filled', fillcolor='whitesmoke')
@@ -132,10 +132,12 @@ class GraphRenderer:
                 self._add_tensor_node(tensor, c)
 
         # --- Connect the main components ---
+        if not self.data['layers']:
+            return
+
         layer_0_cluster_name = f"cluster_layer_{self.data['layers'][0]['index']}"
 
-        if self.data['globals_pre'] and self.data['layers']:
-            # Connect from the last pre-global tensor to the first tensor in Layer 0
+        if self.data['globals_pre']:
             self.dot.edge(
                 self.data['globals_pre'][-1]['name'],
                 self.data['layers'][0]['tensors'][0]['name'],
@@ -143,21 +145,18 @@ class GraphRenderer:
             )
 
         if len(self.data['layers']) > 1:
-            # Connect from the last tensor in Layer 0 to the stack summary
             self.dot.edge(
                 self.data['layers'][0]['tensors'][-1]['name'],
                 'layer_stack_summary',
                 ltail=layer_0_cluster_name
             )
             if self.data['globals_post']:
-                # Connect from the stack summary to the first post-global tensor
                 self.dot.edge(
                     'layer_stack_summary',
                     self.data['globals_post'][0]['name'],
                     lhead='cluster_globals_post'
                 )
-        elif self.data['layers'] and self.data['globals_post']:
-            # If there's no stack, connect Layer 0 directly to the post-globals
+        elif self.data['globals_post']:
             self.dot.edge(
                 self.data['layers'][0]['tensors'][-1]['name'],
                 self.data['globals_post'][0]['name'],
@@ -165,9 +164,23 @@ class GraphRenderer:
                 lhead='cluster_globals_post'
             )
 
+    def render(self, save_path: Optional[str] = None):
+        """
+        Generates the diagram. If save_path is provided, it saves to a file.
+        Otherwise, it displays the diagram in the default image viewer.
+        """
+        self._build_graph()
         try:
-            self.dot.render(output_path, format='png', view=False, cleanup=True)
-            print(f"Diagram saved to {output_path}.png")
+            if save_path:
+                # The render method adds the extension, so we pass the path without it
+                # to avoid a double extension (e.g., 'model.png.png').
+                path_without_ext = save_path.rsplit('.', 1)[0] if '.' in save_path else save_path
+                output_filename = self.dot.render(path_without_ext, format='png', view=False, cleanup=True)
+                print(f"Diagram saved to {output_filename}")
+            else:
+                # Render to a temporary file and display
+                print("Displaying diagram...")
+                self.dot.render(format='png', view=True, cleanup=True)
         except Exception as e:
             print(f"Error rendering graph: {e}")
             print("Please ensure Graphviz is installed and in your system's PATH.")

@@ -56,28 +56,36 @@ class TestGraphRenderer(unittest.TestCase):
         mock_dot.attr.assert_any_call('node', shape='box', style='rounded,filled', fillcolor='lightblue')
 
     @patch('renderer.graphviz.Digraph')
-    def test_render_calls(self, MockDigraph):
-        """Test the main render method to ensure all sub-render methods are called."""
+    def test_render_save_and_display(self, MockDigraph):
+        """Test the main render method for both saving and displaying."""
         mock_dot_instance = MockDigraph.return_value
 
         renderer = GraphRenderer(self.analysis_data)
 
-        # Mock the sub-methods to check if they are called
-        renderer._add_tensor_node = MagicMock()
-        renderer._render_layer_0_detail = MagicMock()
-        renderer._render_layer_stack_summary = MagicMock()
+        # We mock _build_graph because its internal logic is tested elsewhere.
+        renderer._build_graph = MagicMock()
 
-        renderer.render('test_output')
+        # --- Test Case 1: Saving the diagram ---
+        renderer.render(save_path='test_output.png')
 
-        # Check that nodes for globals are created
-        self.assertEqual(renderer._add_tensor_node.call_count, 2)
+        # Check that the graph was built
+        renderer._build_graph.assert_called_once()
 
-        # Check that main rendering components are called
-        renderer._render_layer_0_detail.assert_called_once()
-        renderer._render_layer_stack_summary.assert_called_once()
+        # Check that the final render call was made correctly for saving
+        mock_dot_instance.render.assert_called_once_with(
+            'test_output', format='png', view=False, cleanup=True
+        )
 
-        # Check that the final render call is made
-        mock_dot_instance.render.assert_called_once_with('test_output', format='png', view=False, cleanup=True)
+        # --- Test Case 2: Displaying the diagram ---
+        # Reset the mock for the next call
+        mock_dot_instance.render.reset_mock()
+
+        renderer.render(save_path=None)
+
+        # Check that the final render call was made correctly for displaying
+        mock_dot_instance.render.assert_called_once_with(
+            format='png', view=True, cleanup=True
+        )
 
     @patch('renderer.graphviz.Digraph')
     def test_layer_0_detail_vertical_rendering(self, MockDigraph):

@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 import threading
 import sys
+import os
 from analyzer import GGUFAnalyzer
 from renderer import GraphRenderer, format_size
 
@@ -12,6 +13,7 @@ class GGUFVizGUI(tk.Tk):
         super().__init__()
         self.title("GGUF Visualizer")
         self.geometry("700x500")
+        self.renderer = None # To store the renderer instance after generation
 
         # Frame for input/output selection
         file_frame = tk.Frame(self, padx=10, pady=10)
@@ -23,17 +25,17 @@ class GGUFVizGUI(tk.Tk):
         tk.Entry(file_frame, textvariable=self.input_path, width=60).grid(row=0, column=1, sticky=tk.EW)
         tk.Button(file_frame, text="Browse...", command=self.browse_input_file).grid(row=0, column=2, padx=5)
 
-        # Output file selection
-        tk.Label(file_frame, text="Output PNG:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.output_path = tk.StringVar()
-        tk.Entry(file_frame, textvariable=self.output_path, width=60).grid(row=1, column=1, sticky=tk.EW)
-        tk.Button(file_frame, text="Save As...", command=self.browse_output_file).grid(row=1, column=2, padx=5)
-
         file_frame.columnconfigure(1, weight=1)
 
-        # Generate button
-        self.generate_button = tk.Button(self, text="Generate Diagram", command=self.start_generation, font=("Arial", 12, "bold"))
-        self.generate_button.pack(pady=10)
+        # --- Action Buttons ---
+        action_frame = tk.Frame(self)
+        action_frame.pack(pady=10)
+
+        self.generate_button = tk.Button(action_frame, text="Generate & Display Diagram", command=self.start_generation, font=("Arial", 12, "bold"))
+        self.generate_button.pack(side=tk.LEFT, padx=5)
+
+        self.save_button = tk.Button(action_frame, text="Save Diagram As...", command=self.save_diagram, state='disabled')
+        self.save_button.pack(side=tk.LEFT, padx=5)
 
         # Status/log text area
         self.log_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, height=20, state='disabled')
@@ -55,41 +57,51 @@ class GGUFVizGUI(tk.Tk):
         )
         if filepath:
             self.input_path.set(filepath)
-            # Suggest a default output path based on the input
-            output_suggestion = filepath.rsplit('.', 1)[0] + "_diagram"
-            self.output_path.set(output_suggestion)
 
-    def browse_output_file(self):
-        """Opens a dialog to select a location to save the PNG file."""
-        filepath = filedialog.asksaveasfilename(
+    def save_diagram(self):
+        """Opens a dialog to save the currently generated diagram."""
+        if not self.renderer:
+            messagebox.showwarning("Warning", "Please generate a diagram first.")
+            return
+
+        save_path = filedialog.asksaveasfilename(
             title="Save Diagram As",
             filetypes=(("PNG files", "*.png"),),
-            defaultextension=".png"
+            defaultextension=".png",
+            initialfile=os.path.basename(self.input_path.get()).rsplit('.', 1)[0] + "_diagram.png"
         )
-        if filepath:
-            # The dialog adds the extension, but our renderer adds it too.
-            # So, we remove it here to avoid a double extension.
-            self.output_path.set(filepath.rsplit('.', 1)[0])
+
+        if save_path:
+            try:
+                self.log(f"Saving diagram to {save_path}...")
+                # Use the stored renderer to save the diagram to the new path
+                self.renderer.render(save_path=save_path)
+                self.log("Save complete.")
+                messagebox.showinfo("Success", f"Diagram saved successfully to\n{save_path}")
+            except Exception as e:
+                self.log(f"Error during save: {e}")
+                messagebox.showerror("Error", f"Could not save the diagram: {e}")
 
     def start_generation(self):
         """Starts the analysis and rendering process in a separate thread."""
         input_file = self.input_path.get()
-        output_file = self.output_path.get()
-
-        if not input_file or not output_file:
-            messagebox.showerror("Error", "Please select both an input and output file.")
+        if not input_file:
+            messagebox.showerror("Error", "Please select an input GGUF file.")
             return
 
         self.generate_button.config(state='disabled', text="Generating...")
+        self.save_button.config(state='disabled')
+        self.renderer = None # Reset previous renderer
+
         self.log_area.config(state='normal')
         self.log_area.delete('1.0', tk.END)
         self.log_area.config(state='disabled')
 
         # Run the core logic in a thread to keep the GUI responsive
-        thread = threading.Thread(target=self.run_generation, args=(input_file, output_file))
+        thread = threading.Thread(target=self.run_generation, args=(input_file,))
         thread.start()
 
-    def run_generation(self, input_file, output_file):
+    def run_generation(self, input_file):
         """The core logic that runs in a separate thread."""
         try:
             self.log(f"Analyzing GGUF file: {input_file}...")
@@ -98,37 +110,36 @@ class GGUFVizGUI(tk.Tk):
             self.log("Analysis complete.")
 
             summary = analysis_data['summary']
-            total_params = summary['total_params']
-            total_size_bytes = summary['total_size_bytes']
-            layer_count = len(analysis_data['layers'])
-
             summary_text = (
                 "\n--- GGUF Model Summary ---\n"
-                f"Total Parameters: {total_params / 1e9:.2f} B\n"
-                f"Total Size:       {format_size(total_size_bytes)}\n"
-                f"Layer Count:      {layer_count}\n"
+                f"Total Parameters: {summary['total_params'] / 1e9:.2f} B\n"
+                f"Total Size:       {format_size(summary['total_size_bytes'])}\n"
+                f"Layer Count:      {len(analysis_data['layers'])}\n"
                 "--------------------------\n"
             )
             self.log(summary_text)
 
-            self.log(f"Rendering diagram to {output_file}.png...")
-            renderer = GraphRenderer(analysis_data)
+            self.log("Building and displaying diagram...")
 
-            # Redirect renderer's print output to our log
+            # Store the renderer instance so we can save it later
+            self.renderer = GraphRenderer(analysis_data)
+
+            # Redirect print output to our log for the rendering phase
             original_stdout = sys.stdout
             sys.stdout = self
 
-            renderer.render(output_file)
+            # Calling render() without a path will display it
+            self.renderer.render()
 
             sys.stdout = original_stdout # Restore stdout
-            self.log("Done.")
-            messagebox.showinfo("Success", f"Diagram saved successfully to {output_file}.png")
+            self.log("Display complete. You can now save the diagram.")
+            self.save_button.config(state='normal') # Enable the save button
 
         except Exception as e:
             self.log(f"\nAn error occurred: {e}")
             messagebox.showerror("Error", f"An unexpected error occurred: {e}")
         finally:
-            self.generate_button.config(state='normal', text="Generate Diagram")
+            self.generate_button.config(state='normal', text="Generate & Display Diagram")
             sys.stdout = sys.__stdout__ # Ensure stdout is always restored
 
     def write(self, text):
