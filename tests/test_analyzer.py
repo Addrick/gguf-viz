@@ -111,5 +111,41 @@ class TestGGUFAnalyzer(unittest.TestCase):
         )
         self.assertEqual(result['layers'][0]['size'], expected_layer_0_size)
 
+    @patch('analyzer.gguf.GGUFReader')
+    @patch('analyzer.GGML_QUANT_SIZES')
+    def test_structure_signature_logic(self, MockGGMLQuantSizes, MockGGUFReader):
+        """Test that structure signatures are the same for identical layers and different for others."""
+        mock_reader_instance = MockGGUFReader.return_value
+        MockGGMLQuantSizes.get.side_effect = lambda key, default: self.mock_quant_sizes.get(key, default)
+
+        # Layer 0 and 2 are identical, Layer 1 is different (missing a tensor)
+        tensors = [
+            MockTensor('blk.0.attn_q.weight', [10, 10], 100, self.Q8_0),
+            MockTensor('blk.0.ffn_down.weight', [20, 10], 200, self.Q8_0),
+
+            MockTensor('blk.1.attn_q.weight', [10, 10], 100, self.Q8_0), # Missing ffn_down
+
+            MockTensor('blk.2.attn_q.weight', [10, 10], 100, self.Q8_0),
+            MockTensor('blk.2.ffn_down.weight', [20, 10], 200, self.Q8_0),
+        ]
+        mock_reader_instance.tensors = tensors
+
+        analyzer = GGUFAnalyzer('fake_path.gguf')
+        analyzer.reader = mock_reader_instance
+        result = analyzer.analyze()
+
+        self.assertEqual(len(result['layers']), 3)
+
+        sig_0 = result['layers'][0]['structure_signature']
+        sig_1 = result['layers'][1]['structure_signature']
+        sig_2 = result['layers'][2]['structure_signature']
+
+        # Signatures for identical layers should be the same
+        self.assertEqual(sig_0, sig_2)
+
+        # Signature for the different layer should be different
+        self.assertNotEqual(sig_0, sig_1)
+        self.assertNotEqual(sig_2, sig_1)
+
 if __name__ == '__main__':
     unittest.main()

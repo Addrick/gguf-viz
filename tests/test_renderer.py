@@ -43,8 +43,8 @@ class TestGraphRenderer(unittest.TestCase):
         """Test the format_size utility function."""
         self.assertEqual(format_size(500), "500 B")
         self.assertEqual(format_size(2048), "2.00 KB")
-        self.assertEqual(format_size(1048576 * 2.5), "2.5000 MB")
-        self.assertEqual(format_size(1073741824 * 3), "3.0000 GB")
+        self.assertEqual(format_size(1048576 * 2.5), "2.500000 MB")
+        self.assertEqual(format_size(1073741824 * 3), "3.000000 GB")
 
     @patch('renderer.graphviz.Digraph')
     def test_renderer_initialization(self, MockDigraph):

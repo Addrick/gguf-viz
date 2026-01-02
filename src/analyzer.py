@@ -81,8 +81,10 @@ class GGUFAnalyzer:
 
         # Add structure signatures to each layer before sorting
         for data in layers.values():
-            # Signature now includes shape and tensor type for accurate comparison
-            structures = [(tuple(t['shape']), t['tensor_type']) for t in data['tensors']]
+            # Signature now includes the tensor's internal name (e.g., "attn_q.weight"),
+            # its shape, and its tensor type. This creates a highly specific signature
+            # that correctly distinguishes between layers with different architectures.
+            structures = [(t['name'].split('.', 2)[-1], tuple(t['shape']), t['tensor_type']) for t in data['tensors']]
             data['structure_signature'] = tuple(sorted(structures))
 
         # Convert defaultdict to a sorted list for predictable order

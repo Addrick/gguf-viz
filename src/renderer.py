@@ -8,9 +8,9 @@ def format_size(size_bytes: int) -> str:
     elif size_bytes < 1024**2:
         return f"{size_bytes/1024:.2f} KB"
     elif size_bytes < 1024**3:
-        return f"{size_bytes/1024**2:.4f} MB"
+        return f"{size_bytes/1024**2:.6f} MB"
     else:
-        return f"{size_bytes/1024**3:.4f} GB"
+        return f"{size_bytes/1024**3:.6f} GB"
 
 class GraphRenderer:
     """Renders the GGUF analysis data into a visual graph."""
@@ -71,7 +71,8 @@ class GraphRenderer:
         details_label = ""
         if all_same_structure and first_sig:
             # All layers are the same, show a consolidated summary
-            shapes = [s[0] for s in first_sig] # Extract shapes from structure signature
+            # The signature is (internal_name, shape, type). We only want the shape.
+            shapes = [s[1] for s in first_sig]
             shape_counts = Counter(shapes)
             shape_summary = [f"{count}x {' x '.join(map(str, shape))}" for shape, count in sorted(shape_counts.items())]
 
@@ -91,7 +92,8 @@ class GraphRenderer:
 
                 sig = layer.get('structure_signature')
                 if sig:
-                    shapes = [s[0] for s in sig]
+                    # The signature is (internal_name, shape, type). We only want the shape.
+                    shapes = [s[1] for s in sig]
                     shape_counts = Counter(shapes)
                     shape_summary = ", ".join(f"{c}x[{'x'.join(map(str, s))}]" for s, c in sorted(shape_counts.items()))
                     layer_details.append(f"{size_info} (Shapes: {shape_summary})")
