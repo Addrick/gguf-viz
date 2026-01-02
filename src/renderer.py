@@ -31,7 +31,7 @@ class GraphRenderer:
         parent_graph.node(name, label=label, shape='record')
 
     def _render_layer_0_detail(self):
-        """Renders the first layer in detail with internal tensor structure."""
+        """Renders the first layer in detail as a single vertical column."""
         if not self.data['layers']:
             return
 
@@ -41,29 +41,17 @@ class GraphRenderer:
         with self.dot.subgraph(name=f"cluster_{layer_id}") as c:
             c.attr(label=f"Layer {layer_0['index']} (Detailed View)\\nSize: {format_size(layer_0['size'])}", style='filled', fillcolor='lightgrey')
 
-            # Sub-groups for Attention and FFN
-            attn_tensors = [t for t in layer_0['tensors'] if 'attn' in t['name']]
-            ffn_tensors = [t for t in layer_0['tensors'] if 'ffn' in t['name']]
-            other_tensors = [t for t in layer_0['tensors'] if 'attn' not in t['name'] and 'ffn' not in t['name']]
+            all_layer_tensors = layer_0['tensors']
 
-            if attn_tensors:
-                with c.subgraph(name=f"cluster_{layer_id}_attn") as attn_sg:
-                    attn_sg.attr(label="Attention", style='rounded,filled', fillcolor='lightblue2')
-                    for tensor in attn_tensors:
-                        self._add_tensor_node(tensor, attn_sg)
-
-            if ffn_tensors:
-                with c.subgraph(name=f"cluster_{layer_id}_ffn") as ffn_sg:
-                    ffn_sg.attr(label="Feed-Forward Network", style='rounded,filled', fillcolor='lightgreen2')
-                    for tensor in ffn_tensors:
-                        self._add_tensor_node(tensor, ffn_sg)
-
-            # Add an invisible edge to enforce vertical alignment
-            if attn_tensors and ffn_tensors:
-                c.edge(attn_tensors[-1]['name'], ffn_tensors[0]['name'], style='invis')
-
-            for tensor in other_tensors:
+            # Add all tensor nodes to the subgraph
+            for tensor in all_layer_tensors:
                 self._add_tensor_node(tensor, c)
+
+            # Create invisible edges between consecutive tensors to enforce a strict vertical order
+            if len(all_layer_tensors) > 1:
+                for i in range(len(all_layer_tensors) - 1):
+                    # Connect the current tensor to the next one
+                    c.edge(all_layer_tensors[i]['name'], all_layer_tensors[i+1]['name'], style='invis')
 
     def _render_layer_stack_summary(self):
         """Renders a summary node for the stack of remaining layers with detailed sizes and shapes."""

@@ -80,8 +80,8 @@ class TestGraphRenderer(unittest.TestCase):
         mock_dot_instance.render.assert_called_once_with('test_output', format='png', view=False, cleanup=True)
 
     @patch('renderer.graphviz.Digraph')
-    def test_layer_0_detail_rendering(self, MockDigraph):
-        """Test detailed rendering of Layer 0 with subgroups."""
+    def test_layer_0_detail_vertical_rendering(self, MockDigraph):
+        """Test detailed rendering of Layer 0 enforces a vertical layout."""
         mock_dot_instance = MockDigraph.return_value
 
         # Use a MagicMock to simulate the subgraph context manager
@@ -89,14 +89,27 @@ class TestGraphRenderer(unittest.TestCase):
         mock_dot_instance.subgraph.return_value.__enter__.return_value = mock_subgraph
 
         renderer = GraphRenderer(self.analysis_data)
+        # We patch _add_tensor_node because we're not testing its functionality here,
+        # only that it's called correctly.
+        renderer._add_tensor_node = MagicMock()
+
         renderer._render_layer_0_detail()
 
-        # Check that a cluster is created for Layer 0
+        # 1. Check that a cluster is created for Layer 0
         mock_dot_instance.subgraph.assert_any_call(name='cluster_layer_0')
 
-        # Check that sub-clusters for attn and ffn are created
-        mock_subgraph.subgraph.assert_any_call(name='cluster_layer_0_attn')
-        mock_subgraph.subgraph.assert_any_call(name='cluster_layer_0_ffn')
+        # 2. Check that tensor nodes were added for each tensor in layer 0
+        self.assertEqual(renderer._add_tensor_node.call_count, 2)
+
+        # 3. Check that an invisible edge was created to enforce vertical layout
+        # This is the key change from the previous implementation.
+        layer_0_tensors = self.analysis_data['layers'][0]['tensors']
+        expected_edge_call = call(
+            layer_0_tensors[0]['name'],
+            layer_0_tensors[1]['name'],
+            style='invis'
+        )
+        mock_subgraph.edge.assert_has_calls([expected_edge_call])
 
     @patch('renderer.graphviz.Digraph')
     def test_layer_stack_summary_node(self, MockDigraph):
