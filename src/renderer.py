@@ -8,9 +8,9 @@ def format_size(size_bytes: int) -> str:
     elif size_bytes < 1024**2:
         return f"{size_bytes/1024:.2f} KB"
     elif size_bytes < 1024**3:
-        return f"{size_bytes/1024**2:.6f} MB"
+        return f"{size_bytes/1024**2:.2f} MB"
     else:
-        return f"{size_bytes/1024**3:.6f} GB"
+        return f"{size_bytes/1024**3:.2f} GB"
 
 class GraphRenderer:
     """Renders the GGUF analysis data into a visual graph."""
@@ -85,24 +85,24 @@ class GraphRenderer:
                 f"{'\\n'.join(size_summary)}\\n"
             )
         else:
-            # Layers differ, show details for each
+            # Layers differ, show a detailed tensor breakdown for each.
+            # This provides full transparency and avoids confusing summaries.
             layer_details = []
             for layer in remaining_layers:
-                size_info = f"Layer {layer['index']}: {format_size(layer['size'])}"
-
-                sig = layer.get('structure_signature')
-                if sig:
-                    # The signature is (internal_name, shape, type). We only want the shape.
-                    shapes = [s[1] for s in sig]
-                    shape_counts = Counter(shapes)
-                    shape_summary = ", ".join(f"{c}x[{'x'.join(map(str, s))}]" for s, c in sorted(shape_counts.items()))
-                    layer_details.append(f"{size_info} (Shapes: {shape_summary})")
-                else:
-                    layer_details.append(size_info)
+                # Use left-alignment for clean, readable blocks of text.
+                size_info = f"Layer {layer['index']}: {format_size(layer['size'])}\\l"
+                tensor_breakdown = [size_info]
+                # Sort tensors by name for consistent ordering.
+                for tensor in sorted(layer['tensors'], key=lambda t: t['name']):
+                    internal_name = tensor['name'].split('.', 2)[-1]
+                    shape_str = 'x'.join(map(str, tensor['shape']))
+                    size_str = format_size(tensor['size_bytes'])
+                    tensor_breakdown.append(f"  • {internal_name}: [{shape_str}] ({size_str})\\l")
+                layer_details.append('\\n'.join(tensor_breakdown))
 
             details_label = (
                 f"--- Layer Details (Structures Vary) ---\\n"
-                f"{'\\n'.join(layer_details)}\\n"
+                f"{'\\n\\n'.join(layer_details)}\\n" # Separate layers with a blank line for readability.
             )
 
         label = (

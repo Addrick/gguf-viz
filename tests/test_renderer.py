@@ -43,8 +43,8 @@ class TestGraphRenderer(unittest.TestCase):
         """Test the format_size utility function."""
         self.assertEqual(format_size(500), "500 B")
         self.assertEqual(format_size(2048), "2.00 KB")
-        self.assertEqual(format_size(1048576 * 2.5), "2.500000 MB")
-        self.assertEqual(format_size(1073741824 * 3), "3.000000 GB")
+        self.assertEqual(format_size(1048576 * 2.5), "2.50 MB")
+        self.assertEqual(format_size(1073741824 * 3), "3.00 GB")
 
     @patch('renderer.graphviz.Digraph')
     def test_renderer_initialization(self, MockDigraph):
@@ -120,19 +120,44 @@ class TestGraphRenderer(unittest.TestCase):
         mock_subgraph.edge.assert_has_calls([expected_edge_call])
 
     @patch('renderer.graphviz.Digraph')
-    def test_layer_stack_summary_node(self, MockDigraph):
-        """Test if the layer stack summary node is created correctly."""
+    def test_layer_stack_summary_structures_vary(self, MockDigraph):
+        """Test the summary for layers with varying structures, ensuring detailed breakdown."""
         mock_dot_instance = MockDigraph.return_value
 
-        renderer = GraphRenderer(self.analysis_data)
+        # Create data where layer 1 and 2 have different tensor structures
+        varied_data = self.analysis_data.copy()
+        varied_data['layers'] = [
+            self.analysis_data['layers'][0], # Layer 0 (for context)
+            {
+                'index': 1, 'size': 100, 'structure_signature': 'sig1',
+                'tensors': [{'name': 'layer.1.attn', 'shape': [10], 'size_bytes': 100}]
+            },
+            {
+                'index': 2, 'size': 200, 'structure_signature': 'sig2',
+                'tensors': [
+                    {'name': 'layer.2.ffn_1', 'shape': [20], 'size_bytes': 100},
+                    {'name': 'layer.2.ffn_2', 'shape': [20], 'size_bytes': 100},
+                ]
+            }
+        ]
+
+        renderer = GraphRenderer(varied_data)
         renderer._render_layer_stack_summary()
 
-        # Verify the node call
         args, kwargs = mock_dot_instance.node.call_args
-        self.assertEqual(args[0], 'layer_stack_summary')
-        self.assertIn("Stack of 1 Layers", kwargs['label'])
-        self.assertIn("Total Stack Size", kwargs['label'])
-        self.assertEqual(kwargs['shape'], 'box3d')
+        label = kwargs['label']
+
+        # Check for the correct title
+        self.assertIn("--- Layer Details (Structures Vary) ---", label)
+
+        # Check for Layer 1's details (left-aligned)
+        self.assertIn("Layer 1: 100 B\\l", label)
+        self.assertIn("• attn: [10] (100 B)\\l", label)
+
+        # Check for Layer 2's details (separated by a newline)
+        self.assertIn("\\n\\nLayer 2: 200 B\\l", label)
+        self.assertIn("• ffn_1: [20] (100 B)\\l", label)
+        self.assertIn("• ffn_2: [20] (100 B)\\l", label)
 
 if __name__ == '__main__':
     unittest.main()
